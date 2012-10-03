@@ -18,8 +18,9 @@
 #      under the License.
 
 # ----------------------------------------------------------------
-# check_nexenta.py, v 1.0 
-# 2012/09/25  Brenn Oosterbaan
+# check_nexenta.py, v 1.0.1
+# 2012/09/25  Brenn Oosterbaan - initial version
+# 2012/10/03 Brenn Oosterbaan  - bug fix in API error handling
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -127,7 +128,7 @@ class NexentaApi():
             raise CritError("Unable to connect to API at %s" % (self.url))
            
         if response['error']:
-            raise CritError("API error occured: ", response['error'])
+            raise CritError("API error occured: %s" % response['error'])
         else:
             return response['result']
         
@@ -546,7 +547,7 @@ def print_usage():
     sys.exit()
    
 def print_version():
-    print "Version 1.0"
+    print "Version 1.0.1"
     sys.exit() 
 
 if __name__ == '__main__':
