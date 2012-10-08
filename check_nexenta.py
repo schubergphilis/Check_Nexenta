@@ -18,9 +18,13 @@
 #      under the License.
 
 # ----------------------------------------------------------------
-# check_nexenta.py, v 1.0.1
-# 2012/09/25  Brenn Oosterbaan - initial version
-# 2012/10/03 Brenn Oosterbaan  - bug fix in API error handling
+# check_nexenta.py, v 1.0.2
+# 2012/09/25 Brenn Oosterbaan - initial version
+# 2012/10/03 Brenn Oosterbaan - bug fix in API error handling
+# 2012/10/08 Brenn Oosterbaan - code optimization, bug fixes in
+#                               space thresholds, added volume
+#                               compression to performance data
+#                               and extra support for HA clusters
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -28,7 +32,7 @@
 # Description:
 #
 # Script to provide performance data and monitor 
-# the health of  Nexenta clusters and nodes.
+# the health of Nexenta clusters and nodes.
 # ----------------------------------------------------------------
 
 import ConfigParser
@@ -246,46 +250,60 @@ def check_spaceusage(nexenta):
                     if threshold.split(';')[0] == "DEFAULT":
                         volwarn, volcrit, snapwarn, snapcrit = threshold.split(';')[1:]
             
+            # Get volume properties
+            volprops = api.get_data(obj='folder', meth='get_child_props', par=[vol, ''])
+            
             # Get used/available space.
-            available = api.get_data(obj='folder', meth='get_child_prop', par=[vol, 'available'])
-            volused = api.get_data(obj='folder', meth='get_child_prop', par=[vol, 'used'])
-            snapused = api.get_data(obj='folder', meth='get_child_prop', par=[vol, 'usedbysnapshots'])
-            snapused = (convert_space(snapused) / (convert_space(volused) + convert_space(available))) * 100            
-            volused = (convert_space(volused) / (convert_space(volused) + convert_space(available))) * 100
+            available = volprops.get('available')
+            snapused = volprops.get('usedbysnapshots')
+            volused = convert_space(volprops.get('used'))
             
-            # If no snap warn or crit set, effectively ignore by setting to 101%.
-            if not snapwarn[:-1].isdigit():
-                snapwarn = "101%"
-            if not snapcrit[:-1].isdigit():
-                snapcrit = "101%"
-
-            # Check if a threshold has been met.                
-            if int(snapcrit[:-1]) <= snapused:
-                rc.RC = NagiosStates.CRITICAL
-                errors.append("%.0f%% of %s used by snaphots!" % (snapused, vol))
-            elif int(snapwarn[:-1]) <= snapused:
-                rc.RC = NagiosStates.WARNING
-                errors.append("%.0f%% of %s used by snaphots" % (snapused, vol))
+            snapusedprc = (convert_space(snapused) / (volused + convert_space(available))) * 100            
+            volusedprc = (volused / (volused + convert_space(available))) * 100
             
+            # Check if a snapshot threshold has been met.                
+            snaperror = ""
+            if snapwarn[:-1].isdigit():
+                if '%' in snapwarn:
+                    if int(snapwarn[:-1]) <= snapusedprc:
+                        rc.RC = NagiosStates.WARNING
+                        snaperror = "WARNING: %.0f%% of %s used by snaphots" % (snapusedprc, vol)
+                elif convert_space(snapwarn) <= convert_space(snapused):
+                        rc.RC = NagiosStates.WARNING
+                        snaperror = "WARNING: %s of %s used by snaphots" % (snapused, vol)
+            
+            if snapcrit[:-1].isdigit():
+                if '%' in snapcrit:
+                    if int(snapcrit[:-1]) <= snapusedprc:
+                        rc.RC = NagiosStates.CRITICAL
+                        snaperror = "CRITICAL: %.0f%% of %s used by snaphots" % (snapusedprc, vol)
+                elif convert_space(snapcrit) <= convert_space(snapused):
+                        rc.RC = NagiosStates.CRITICAL
+                        snaperror = "CRITICAL: %s of %s used by snaphots" % (snapused, vol)
+            
+            if snaperror:
+                errors.append(snaperror)
+            
+            # Check if a folder threshold has been met.
             if volcrit[:-1].isdigit():
                 if '%' in volcrit:
-                    if int(volcrit[:-1]) <= volused:
+                    if int(volcrit[:-1]) <= volusedprc:
                         rc.RC = NagiosStates.CRITICAL
-                        errors.append("%s %.0f%% full!" % (vol, volused))
+                        errors.append("CRITICAL: %s %.0f%% full!" % (vol, volusedprc))
                         continue
                 elif convert_space(volcrit) <= convert_space(available):
                     rc.RC = NagiosStates.CRITICAL
-                    errors.append("%s %s available!" % (vol, available))
+                    errors.append("CRITICAL: %s %s available!" % (vol, available))
                     continue
             
             if volwarn[:-1].isdigit():
                 if '%' in volwarn:
-                    if int(volwarn[:-1]) <= volused:
+                    if int(volwarn[:-1]) <= volusedprc:
                         rc.RC = NagiosStates.WARNING
-                        errors.append("%s %.0f%% full" % (vol, used))
-                elif convert_space(warn) <= convert_space(available): 
+                        errors.append("WARNING: %s %.0f%% full" % (vol, volusedprc))
+                elif convert_space(volwarn) >= convert_space(available): 
                     rc.RC = NagiosStates.WARNING
-                    errors.append("%s %s available" % (vol, available))                                        
+                    errors.append("WARNING: %s %s available" % (vol, available))                                        
     
     return (errors)
 
@@ -359,63 +377,77 @@ def collect_perfdata(nexenta):
     cfg = ReadConfig()
     rc = NagiosStates()
     perfdata = []
+    output = []
     
-    # Collect performace data, if snmp is configured in the config file for this Nexenta.
+    # Collect SNMP performance data, if snmp is configured in the config file for this Nexenta.
     if cfg.get_option(nexenta, 'snmp_user') and cfg.get_option(nexenta, 'snmp_pass'): 
         # Check for dependancy net-snmp-python.
         try:
             netsnmp
         except NameError:
             rc.RC = NagiosStates.WARNING
-            return ("WARNING: net-snmp-python not available, Performance Data will be skipped.")
+            output.append("WARNING: net-snmp-python not available, SNMP Performance Data will be skipped.")
         else:
             snmp = SnmpRequest(nexenta)
             
-        # Get memory/disk free and used.
-        devices = snmp.walk_snmp('HOST-RESOURCES-MIB::hrStorageDescr')
-        if devices:
-            for device in devices:
-                size = snmp.get_snmp('HOST-RESOURCES-MIB::hrStorageSize.%s' % device.iid)       
-                if size == '0':  # Skip devices of zero size.
-                    continue 
-                block = snmp.get_snmp('HOST-RESOURCES-MIB::hrStorageAllocationUnits.%s' % device.iid)
-                used = snmp.get_snmp('HOST-RESOURCES-MIB::hrStorageUsed.%s' % device.iid)
-                used = (int(used) * int(block)) / 1024
-                size = (int(size) * int(block)) / 1024
-                free = (int(size) - int(used))
-                
-                perfdata.append("'%s free'=%sKB" % (device.val, free))
-                perfdata.append("'%s used'=%sKB" % (device.val, free))
-                
-        # Get snapshot space used.
-        if cfg.get_option(nexenta, 'api_user') and cfg.get_option(nexenta, 'api_pass'):
-            api = NexentaApi(nexenta)
-            volumes = api.get_data(obj='folder', meth='get_names', par=[''])
-            for vol in volumes:
-                snap = api.get_data(obj='folder', meth='get_child_prop', par=[vol, 'usedbysnapshots'])
-                snap = int(convert_space(snap)) / 1024
-                
-                perfdata.append("'/%s snapshots'=%sKB" % (vol, snap))
-        
-        # Get CPU usage.
-        cpu_info = snmp.walk_snmp('HOST-RESOURCES-MIB::hrProcessorLoad')
-        if cpu_info:
-            for cpu_id, cpu_load in enumerate(cpu_info):
-                perfdata.append("'CPU%s used'=%s%%" % (cpu_id, cpu_load.val))                     
-        
-        # Get Network Traffic.
-        interfaces = snmp.walk_snmp('IF-MIB::ifName')
-        if interfaces:
-            for interface in interfaces:
-                intraffic = snmp.get_snmp('IF-MIB::ifHCInOctets.%s' % interface.iid)
-                outtraffic = snmp.get_snmp('IF-MIB::ifHCOutOctets.%s' % interface.iid)
-                intraffic = int(intraffic) * 8
-                outtraffic = int(outtraffic) * 8
-                
-                perfdata.append("'%s Traffic in'=%sc" % (interface.val, intraffic))
-                perfdata.append("'%s Traffic out'=%sc" % (interface.val, outtraffic))
+            # Get CPU usage.
+            cpu_info = snmp.walk_snmp('HOST-RESOURCES-MIB::hrProcessorLoad')
+            if cpu_info:
+                for cpu_id, cpu_load in enumerate(cpu_info):
+                    perfdata.append("'CPU%s used'=%s%%" % (cpu_id, cpu_load.val))                     
+            
+            # Get Network Traffic.
+            interfaces = snmp.walk_snmp('IF-MIB::ifName')
+            if interfaces:
+                for interface in interfaces:
+                    intraffic = snmp.get_snmp('IF-MIB::ifHCInOctets.%s' % interface.iid)
+                    outtraffic = snmp.get_snmp('IF-MIB::ifHCOutOctets.%s' % interface.iid)
+                    intraffic = int(intraffic) * 8
+                    outtraffic = int(outtraffic) * 8
+                    
+                    perfdata.append("'%s Traffic in'=%sc" % (interface.val, intraffic))
+                    perfdata.append("'%s Traffic out'=%sc" % (interface.val, outtraffic))
     
-    return (perfdata)
+    # Collect API performance data, if api is configured in the config file for this Nexenta.
+    if cfg.get_option(nexenta, 'api_user') and cfg.get_option(nexenta, 'api_pass'):
+        api = NexentaApi(nexenta)
+        volumes = []
+        
+        # Get perfdata for all volumes, or only for syspool if skip_folderperf is set to 'on'.
+        skip = cfg.get_option(nexenta, 'skip_folderperf')
+        if skip != "ON":
+            volumes.extend(api.get_data(obj='folder', meth='get_names', par=['']))
+        
+        volumes.extend(["syspool"])
+        
+        for vol in volumes:
+            # Get volume properties
+            volprops = api.get_data(obj='folder', meth='get_child_props', par=[vol, ''])
+            
+            # Get volume used, free and snapshot space.
+            used = convert_space(volprops.get('used')) / 1024
+            free = convert_space(volprops.get('available')) /1024
+            snap = convert_space(volprops.get('usedbysnapshots')) / 1024
+            
+            perfdata.append("'/%s used'=%.0fKB" % (vol, used))
+            perfdata.append("'/%s free'=%.0fKB" % (vol, free))
+            perfdata.append("'/%s snapshots'=%.0fKB" % (vol, snap))
+            
+            # Get compression ratio, if compression is enabled.
+            compression = volprops.get('compression')
+            if compression == "on":
+                ratio = volprops.get('compressratio')
+            
+                perfdata.append("'/%s compressratio'=%s" % (vol, ratio[:-1]))
+                
+        # Get memory used, free and paging.
+        memstats = api.get_data(obj='appliance', meth='get_memstat', par=['']) 
+        
+        perfdata.append("'Memory free'=%sMB" % (memstats.get("ram_free")))
+        perfdata.append("'Memory used'=%sMB" % (memstats.get("ram_total") - memstats.get("ram_free")))
+        perfdata.append("'Memory paging'=%sMB" % (memstats.get("ram_paging")))
+        
+    return (output, perfdata)
 
 
 # Main
@@ -459,7 +491,7 @@ def main(argv):
             # Check spage usage.
             result = check_spaceusage(nexenta)
             if result:
-                output.append(result)
+                output.extend(result)
         elif opt == "-T":
             # Check fault triggers.
             result = check_triggers(nexenta)
@@ -474,12 +506,12 @@ def main(argv):
                 perfdata.extend(perf)
         elif opt == "-P":
             # Collect performance data. 
-            result = collect_perfdata(nexenta)               
-            if "WARNING" in result:
-            	output.extend(result)
-            elif result:
-                perfdata.extend(result)
-                    
+            out, perf = collect_perfdata(nexenta)               
+            if out:
+            	output.extend(out)
+            if perf:
+                perfdata.extend(perf)
+
     if NagiosStates.RC == NagiosStates.OK:
         output.append("Nexenta check OK")
     
@@ -526,14 +558,19 @@ def print_usage():
     print "                  OUTPUT:WARNING: ARC hit ratio below 80%!"
     print "skip_trigger    : If set to ON, do not check fault triggers. Usefull to "
     print "                  prevent double fault reporting when checking a virtual node"
-    print "                  of a Nexenta HA cluster."    
-    print "space_threshold : Thresholds for the volume space usage check. Can be multiple" 
+    print "                  of a Nexenta HA cluster."
+    print "skip_folderperf : If set to ON, do not return performance data for folders."
+    print "                  Usefull to prevent double performance reporting when checking"
+    print "                  a virtual node of a Nexenta HA cluster."
+    print "space_threshold : Thresholds for the folder space usage check. Can be multiple" 
     print "                  lines formatted as <folder>;<vol-warning>;<vol-critical>;"
-    print "                  <snap-warning> and <snap-critical>. Volume thresholds can be"
-    print "                  percentage of space used(%), amount of free space([M,G,T]),"
-    print "                  or IGNORE. Snapshot thresholds can be percentage of space"
-    print "                  used or IGNORE. <folder> can be a specific volume or DEFAULT."
-    print "                  DEFAULT thresholds are applied to all volumes not specified."
+    print "                  <snap-warning>;<snap-critical>."
+    print "                  <folder> can be a specific volume or DEFAULT."
+    print "                  Volume thresholds can be a percentage of space used(%),"
+    print "                  amount of free space([M,G,T]) or IGNORE."
+    print "                  Snapshot thresholds can be a percentage of space used(%),"
+    print "                  amount of space used([M,G,T]) or IGNORE."
+    print "                  DEFAULT thresholds are applied to all folders not specified."
     print "[known_errors]  : Convert severity and/or description of known error messages."
     print "                  Can consist of multiple options(error messages) formatted as" 
     print "                  <error message> = <severity>;<description>."
@@ -547,7 +584,7 @@ def print_usage():
     sys.exit()
    
 def print_version():
-    print "Version 1.0.1"
+    print "Version 1.0.2"
     sys.exit() 
 
 if __name__ == '__main__':
