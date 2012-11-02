@@ -18,13 +18,13 @@
 #      under the License.
 
 # ----------------------------------------------------------------
-# check_nexenta.py, v 1.0.2
-# 2012/09/25 Brenn Oosterbaan - initial version
-# 2012/10/03 Brenn Oosterbaan - bug fix in API error handling
-# 2012/10/08 Brenn Oosterbaan - code optimization, bug fixes in
+# 2012/09/25 v1.0.0 Brenn Oosterbaan - initial version
+# 2012/10/03 v1.0.1 Brenn Oosterbaan - bug fix in API error handling
+# 2012/10/08 v1.0.2 Brenn Oosterbaan - code optimization, bug fixes in
 #                               space thresholds, added volume
 #                               compression to performance data
 #                               and extra support for HA clusters
+# 2012/11/02 v1.0.3 Brenn Oosterbaan - python 2.4 compatible
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -38,10 +38,15 @@
 import ConfigParser
 import base64
 import getopt
-import json
 import os
 import sys
 import urllib2
+
+try:
+    import json
+except ImportError:
+    import simplejson as json
+
 try:
     import netsnmp
 except ImportError:
@@ -70,7 +75,7 @@ class NagiosStates:
                 NagiosStates.__dict__[name] = value
 
 
-class ReadConfig():    
+class ReadConfig:    
     # Check configfile for path, append script path if no path was given.
     # Default to <scriptname>.cfg if no configfile was given.
     def open_config(self, configfile):
@@ -102,7 +107,7 @@ class ReadConfig():
         return None
 
 
-class NexentaApi():
+class NexentaApi:
     # Get the connection info and build the api url.
     def __init__(self, nexenta):
         cfg = ReadConfig()
@@ -137,7 +142,7 @@ class NexentaApi():
             return response['result']
         
 
-class SnmpRequest():
+class SnmpRequest:
     # Read config file and build the NDMP session
     def __init__(self, nexenta):
         cfg = ReadConfig()                
@@ -267,7 +272,7 @@ def check_spaceusage(nexenta):
                 if '%' in snapwarn:
                     if int(snapwarn[:-1]) <= snapusedprc:
                         rc.RC = NagiosStates.WARNING
-                        snaperror = "WARNING: %.0f%% of %s used by snaphots" % (snapusedprc, vol)
+                        snaperror = "WARNING: %s%% of %s used by snaphots" % (int(snapusedprc), vol)
                 elif convert_space(snapwarn) <= convert_space(snapused):
                         rc.RC = NagiosStates.WARNING
                         snaperror = "WARNING: %s of %s used by snaphots" % (snapused, vol)
@@ -276,7 +281,7 @@ def check_spaceusage(nexenta):
                 if '%' in snapcrit:
                     if int(snapcrit[:-1]) <= snapusedprc:
                         rc.RC = NagiosStates.CRITICAL
-                        snaperror = "CRITICAL: %.0f%% of %s used by snaphots" % (snapusedprc, vol)
+                        snaperror = "CRITICAL: %s%% of %s used by snaphots" % (int(snapusedprc), vol)
                 elif convert_space(snapcrit) <= convert_space(snapused):
                         rc.RC = NagiosStates.CRITICAL
                         snaperror = "CRITICAL: %s of %s used by snaphots" % (snapused, vol)
@@ -289,7 +294,7 @@ def check_spaceusage(nexenta):
                 if '%' in volcrit:
                     if int(volcrit[:-1]) <= volusedprc:
                         rc.RC = NagiosStates.CRITICAL
-                        errors.append("CRITICAL: %s %.0f%% full!" % (vol, volusedprc))
+                        errors.append("CRITICAL: %s %s%% full!" % (vol, int(volusedprc)))
                         continue
                 elif convert_space(volcrit) >= convert_space(available):
                     rc.RC = NagiosStates.CRITICAL
@@ -300,7 +305,7 @@ def check_spaceusage(nexenta):
                 if '%' in volwarn:
                     if int(volwarn[:-1]) <= volusedprc:
                         rc.RC = NagiosStates.WARNING
-                        errors.append("WARNING: %s %.0f%% full" % (vol, volusedprc))
+                        errors.append("WARNING: %s %s%% full" % (vol, int(volusedprc)))
                 elif convert_space(volwarn) >= convert_space(available): 
                     rc.RC = NagiosStates.WARNING
                     errors.append("WARNING: %s %s available" % (vol, available))                                        
@@ -429,9 +434,9 @@ def collect_perfdata(nexenta):
             free = convert_space(volprops.get('available')) /1024
             snap = convert_space(volprops.get('usedbysnapshots')) / 1024
             
-            perfdata.append("'/%s used'=%.0fKB" % (vol, used))
-            perfdata.append("'/%s free'=%.0fKB" % (vol, free))
-            perfdata.append("'/%s snapshots'=%.0fKB" % (vol, snap))
+            perfdata.append("'/%s used'=%sKB" % (vol, int(used)))
+            perfdata.append("'/%s free'=%sKB" % (vol, int(free)))
+            perfdata.append("'/%s snapshots'=%sKB" % (vol, int(snap)))
             
             # Get compression ratio, if compression is enabled.
             compression = volprops.get('compression')
@@ -584,7 +589,7 @@ def print_usage():
     sys.exit()
    
 def print_version():
-    print "Version 1.0.2"
+    print "Version 1.0.3"
     sys.exit() 
 
 if __name__ == '__main__':
