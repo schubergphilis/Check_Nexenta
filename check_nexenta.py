@@ -291,7 +291,7 @@ def check_spaceusage(nexenta):
                         rc.RC = NagiosStates.CRITICAL
                         errors.append("CRITICAL: %s %.0f%% full!" % (vol, volusedprc))
                         continue
-                elif convert_space(volcrit) <= convert_space(available):
+                elif convert_space(volcrit) >= convert_space(available):
                     rc.RC = NagiosStates.CRITICAL
                     errors.append("CRITICAL: %s %s available!" % (vol, available))
                     continue
