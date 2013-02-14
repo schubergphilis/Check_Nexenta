@@ -193,7 +193,7 @@ def convert_space(size):
     try:
         return (float(size[:-1]) * int(size_types[size[-1:]]))
     except (KeyError, ValueError):
-        raise CritError("%s is not a valid number!" % size)
+        return 0
 
 
 # Convert severity/description for known errors defined in config file.
@@ -599,7 +599,7 @@ def print_usage():
     sys.exit()
 
 def print_version():
-    print "Version 1.0.3"
+    print "Version 1.0.5"
     sys.exit()
 
 if __name__ == '__main__':
