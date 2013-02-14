@@ -599,7 +599,7 @@ def print_usage():
     sys.exit()
 
 def print_version():
-    print "Version 1.0.5"
+    print "Version 1.0.4"
     sys.exit()
 
 if __name__ == '__main__':
