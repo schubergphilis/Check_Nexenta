@@ -25,7 +25,7 @@
 #                               compression to performance data
 #                               and extra support for HA clusters
 # 2012/11/02 v1.0.3 Brenn Oosterbaan - python 2.4 compatible
-# 2013/02/13 v1.0.4 Brenn Oosterbaan - added 2 retries for API connect
+# 2013/13/02 v1.0.4 Brenn Oosterbaan - added 2 retries for API connect
 # 2013/14/02 v1.0.5 Patrick - added https and snmp v2 support
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
