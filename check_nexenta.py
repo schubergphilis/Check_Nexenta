@@ -27,6 +27,7 @@
 # 2012/11/02 v1.0.3 Brenn Oosterbaan - python 2.4 compatible
 # 2013/13/02 v1.0.4 Brenn Oosterbaan - added 2 retries for API connect
 # 2013/14/02 v1.0.5 Patrick - added https and snmp v2 support
+# 2013/15/02 v1.0.6 Brenn Oosterbaan - simplified snmp v2/v3 support
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -164,29 +165,21 @@ class SnmpRequest:
     def __init__(self, nexenta):
         cfg = ReadConfig()
         
+        username = cfg.get_option(nexenta, 'snmp_user')
+        password = cfg.get_option(nexenta, 'snmp_pass')
+        community = cfg.get_option(nexenta, 'snmp_community')
         port = cfg.get_option(nexenta, 'snmp_port')
         if not port:
             port = 161
 
-        # Check for SNMP version, if not set to 2 default to 3.
-        version = cfg.get_option(nexenta, 'snmp_version')
-        if not version:
-            version = 3
-
-        if version == 2:
-            community = cfg.get_option(nexenta, 'snmp_community')
-            if not community:
-                raise CritError("No SNMP community info configured for %s" % nexenta)
-
+        # If username/password use SNMP v3, else use SNMP v2.
+        if username and password:
+            self.session = netsnmp.Session(DestHost='%s:%s' % (nexenta, port), Version=3, SecLevel='authNoPriv',
+                                           AuthProto='MD5', AuthPass=password, SecName=username)            
+        elif community:
             self.session = netsnmp.Session(DestHost='%s:%s' % (nexenta, port), Version=2, Community=community)
         else:
-            username = cfg.get_option(nexenta, 'snmp_user')
-            password = cfg.get_option(nexenta, 'snmp_pass')
-            if not username or not password:
-                raise CritError("No SNMP username or password configured for %s" % nexenta)
-
-            self.session = netsnmp.Session(DestHost='%s:%s' % (nexenta, port), Version=3, SecLevel='authNoPriv',
-                                           AuthProto='MD5', AuthPass=password, SecName=username)
+             raise CritError("Incorrect SNMP info configured for %s" % nexenta)
 
     # Return the SNMP get value.
     def get_snmp(self, oid):
@@ -580,11 +573,11 @@ def print_usage():
     print "api_ssl         : Use HTTP-SSL (https://) for connection."
     print "api_port        : Port used for API connection to the Nexenta. Defaults to"
     print "                  standard NMV port (2000) if not set."
-    print "snmp_version    : SNMP version 2 (for 2c) or 3 are supported. Defaults to"
-    print "                : SNMP v3."
-    print "snmp_community  : Only for v2, community for SNMP."
-    print "snmp_user       : Only for v3, SNMP username with ro rights on the Nexenta"
-    print "snmp_pass       : Only for v3, password for the SNMP user."
+    print "snmp_user       : SNMP username with ro rights on the Nexenta. Only needed"
+    print "                  for SNMP v3."
+    print "snmp_pass       : Password for the SNMP user. Only needed for SNMP v3."
+    print "snmp_community  : SNMP ro community. Only needed for SNMP v2. Will not be"
+    print "                  used if snmp_user and snmp_pass are configured."
     print "snmp_port       : Port used for SNMP connection to the Nexenta. Defaults to"
     print "                  standard SNMP port (161) if not set."
     print "snmp_extend     : If set to ON, query SNMP extend for data. SNMP extend on a"
@@ -623,7 +616,7 @@ def print_usage():
     sys.exit()
 
 def print_version():
-    print "Version 1.0.5"
+    print "Version 1.0.6"
     sys.exit()
 
 if __name__ == '__main__':
