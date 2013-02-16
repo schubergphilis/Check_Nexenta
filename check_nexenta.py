@@ -28,6 +28,7 @@
 # 2013/13/02 v1.0.4 Brenn Oosterbaan - added 2 retries for API connect
 # 2013/14/02 v1.0.5 Patrick - added https and snmp v2 support
 # 2013/15/02 v1.0.6 Brenn Oosterbaan - simplified snmp v2/v3 support
+# 2013/16/02 v1.0.7 Brenn Oosterbaan - only lookup hostname once
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -44,7 +45,7 @@ import getopt
 import os
 import sys
 import urllib2
-import time
+import socket
 
 try:
     import json
@@ -115,23 +116,24 @@ class NexentaApi:
     # Get the connection info and build the api url.
     def __init__(self, nexenta):
         cfg = ReadConfig()
-        username = cfg.get_option(nexenta, 'api_user')
-        password = cfg.get_option(nexenta, 'api_pass')
+        username = cfg.get_option(nexenta['hostname'], 'api_user')
+        password = cfg.get_option(nexenta['hostname'], 'api_pass')
         if not username or not password:
-            raise CritError("No connection info configured for %s" % nexenta)
+            raise CritError("No connection info configured for %s" % nexenta['hostname'])
         
-        ssl = cfg.get_option(nexenta, 'api_ssl')
+        ssl = cfg.get_option(nexenta['hostname'], 'api_ssl')
         if ssl != "ON":
             protocol = 'http'
         else:
             protocol = 'https'
             
-        port = cfg.get_option(nexenta, 'api_port')
+        port = cfg.get_option(nexenta['hostname'], 'api_port')
         if not port:
             port = 2000
 
         self.base64_string = base64.encodestring('%s:%s' % (username, password))[:-1]
-        self.url = '%s://%s:%s/rest/nms/ <http://%s:%s/rest/nms/>' % (protocol, nexenta, port, nexenta, port)
+        self.url = '%s://%s:%s/rest/nms/ <%s://%s:%s/rest/nms/>' % (protocol, nexenta['ip'], port, protocol, 
+                                                                    nexenta['ip'], port)
 
     # Build the request and return the response.
     def get_data(self, obj, meth, par):
@@ -141,16 +143,14 @@ class NexentaApi:
         request.add_header('Authorization', 'Basic %s' % self.base64_string)
         request.add_header('Content-Type' , 'application/json')
 
-        # Try to connect max 3 times.
-        tries = 3
+        # Try to connect max 2 times.
+        tries = 2
         while tries:
             try:
                 response = json.loads(urllib2.urlopen(request).read())
                 break
             except urllib2.URLError:
-                time.sleep(3)
                 tries += -1
-        # If not succesfull raise an error.
         if not tries:
             raise CritError("Unable to connect to API at %s" % (self.url))
 
@@ -165,21 +165,21 @@ class SnmpRequest:
     def __init__(self, nexenta):
         cfg = ReadConfig()
         
-        username = cfg.get_option(nexenta, 'snmp_user')
-        password = cfg.get_option(nexenta, 'snmp_pass')
-        community = cfg.get_option(nexenta, 'snmp_community')
-        port = cfg.get_option(nexenta, 'snmp_port')
+        username = cfg.get_option(nexenta['hostname'], 'snmp_user')
+        password = cfg.get_option(nexenta['hostname'], 'snmp_pass')
+        community = cfg.get_option(nexenta['hostname'], 'snmp_community')
+        port = cfg.get_option(nexenta['hostname'], 'snmp_port')
         if not port:
             port = 161
 
         # If username/password use SNMP v3, else use SNMP v2.
         if username and password:
-            self.session = netsnmp.Session(DestHost='%s:%s' % (nexenta, port), Version=3, SecLevel='authNoPriv',
+            self.session = netsnmp.Session(DestHost='%s:%s' % (nexenta['ip'], port), Version=3, SecLevel='authNoPriv',
                                            AuthProto='MD5', AuthPass=password, SecName=username)            
         elif community:
-            self.session = netsnmp.Session(DestHost='%s:%s' % (nexenta, port), Version=2, Community=community)
+            self.session = netsnmp.Session(DestHost='%s:%s' % (nexenta['ip'], port), Version=2, Community=community)
         else:
-             raise CritError("Incorrect SNMP info configured for %s" % nexenta)
+             raise CritError("Incorrect SNMP info configured for %s" % nexenta['hostname'])
 
     # Return the SNMP get value.
     def get_snmp(self, oid):
@@ -246,7 +246,7 @@ def check_spaceusage(nexenta):
     errors = []
 
     # Only check space usage if space thresholds are configured in the config file.
-    thresholds = cfg.get_option(nexenta, 'space_threshold')
+    thresholds = cfg.get_option(nexenta['hostname'], 'space_threshold')
     if thresholds:
         api = NexentaApi(nexenta)
         rc = NagiosStates()
@@ -268,7 +268,7 @@ def check_spaceusage(nexenta):
                 if len(threshold.split(';')) == 3:
                     threshold += ";IGNORE;IGNORE"
                 elif len(threshold.split(';')) != 5:
-                    raise CritError("Error in config file at [%s]:space_threshold, line %s" % (nexenta, threshold))
+                    raise CritError("Error in config file at [%s]:space_threshold, line %s" % (nexenta['hostname'], threshold))
 
                 # Get the thresholds, or fall back to the default tresholds.
                 if vol + ";" in thresholds:
@@ -343,7 +343,7 @@ def check_triggers(nexenta):
     errors = []
 
     # Check all triggers, if skip_triggers is not set to 'on' in the config file.
-    skip = cfg.get_option(nexenta, 'skip_trigger')
+    skip = cfg.get_option(nexenta['hostname'], 'skip_trigger')
     if skip != "ON":
         api = NexentaApi(nexenta)
 
@@ -372,7 +372,7 @@ def collect_extends(nexenta):
     perfdata = []
 
     # Collect snmp extend data, if snmp_extend is configured in the config file for this Nexenta.
-    extend = cfg.get_option(nexenta, 'snmp_extend')
+    extend = cfg.get_option(nexenta['hostname'], 'snmp_extend')
     if extend == "ON":
         # Check for dependancy net-snmp-python.
         try:
@@ -408,7 +408,7 @@ def collect_perfdata(nexenta):
     output = []
 
     # Collect SNMP performance data, if snmp is configured in the config file for this Nexenta.
-    if cfg.get_option(nexenta, 'snmp_user') or cfg.get_option(nexenta, 'snmp_community'):
+    if cfg.get_option(nexenta['hostname'], 'snmp_user') or cfg.get_option(nexenta['hostname'], 'snmp_community'):
         # Check for dependancy net-snmp-python.
         try:
             netsnmp
@@ -437,12 +437,12 @@ def collect_perfdata(nexenta):
                     perfdata.append("'%s Traffic out'=%sc" % (interface.val, outtraffic))
 
     # Collect API performance data, if api is configured in the config file for this Nexenta.
-    if cfg.get_option(nexenta, 'api_user') and cfg.get_option(nexenta, 'api_pass'):
+    if cfg.get_option(nexenta['hostname'], 'api_user') and cfg.get_option(nexenta['hostname'], 'api_pass'):
         api = NexentaApi(nexenta)
         volumes = []
 
         # Get perfdata for all volumes, or only for syspool if skip_folderperf is set to 'on'.
-        skip = cfg.get_option(nexenta, 'skip_folderperf')
+        skip = cfg.get_option(nexenta['hostname'], 'skip_folderperf')
         if skip != "ON":
             volumes.extend(api.get_data(obj='folder', meth='get_names', par=['']))
 
@@ -500,10 +500,12 @@ def main(argv):
             print_version()
 
     try:
-        nexenta
+        nexenta = { 'hostname': nexenta, 'ip': socket.getaddrinfo(nexenta,None)[0][4][0] }
     except NameError:
         raise CritError("Invalid arguments, no hostname specified!")
-
+    except socket.gaierror:
+        raise CritError("No IP address found for %s!" % nexenta)
+        
     # If only -H is passed execute default checks.
     if len(opts) == 1:
         opts.extend([("-D", ""), ("-T", "")])
@@ -616,7 +618,7 @@ def print_usage():
     sys.exit()
 
 def print_version():
-    print "Version 1.0.6"
+    print "Version 1.0.7"
     sys.exit()
 
 if __name__ == '__main__':
