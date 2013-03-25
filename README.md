@@ -24,9 +24,9 @@ Supports
 Getting Started
 ===============
 * Make sure you have Python 2.4 or greater installed (tested with python 2.4, 2.6 and 2.7)
-* Download NET-SNMP and follow the instructions in the README of the python directory.
-  (http://www.net-snmp.org/download.html)
+* Download NET-SNMP and follow the instructions in the README of the python directory (http://www.net-snmp.org/download.html).
 * Enable SNMP on your Nexenta.
+* Enable log rotation for nmv.log on your Nexenta (see http://www.cupfighter.net/index.php/2013/03/default-nexenta-zfs-settings-you-want-to-change-part-2/).
 * Download check_nexenta.py and check_nexenta.cfg.
 * Edit check_nexenta.cfg and add the relevant information.
 * Run check_nexenta.py --help for more comprehensive information on what options are available.
