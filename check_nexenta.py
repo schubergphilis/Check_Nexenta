@@ -29,6 +29,7 @@
 # 2013/14/02 v1.0.5 Patrick - added https and snmp v2 support
 # 2013/15/02 v1.0.6 Brenn Oosterbaan - simplified snmp v2/v3 support
 # 2013/16/02 v1.0.7 Brenn Oosterbaan - only lookup hostname once
+# 2013/24/06 v1.0.8 Brenn Oosterbaan - added option to IGNORE messages
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -221,6 +222,9 @@ def known_errors(result):
             severity, description = description.split(';')
         except ValueError:
             raise CritError("Error in config file at [known_errors], line: %s" % description)
+        
+        if not severity.upper() in ("DEFAULT", "WARNING", "CRITICAL", "UNKNOWN", "IGNORE"):
+            raise CritError("Invalid severity in config file at [known_errors], line: %s" % description)
     else:
         # No match found, append default if defined in the config file.
         description = cfg.get_option('known_errors', "DEFAULT")
@@ -237,7 +241,7 @@ def known_errors(result):
     if severity.upper() == "DEFAULT":
         severity = result['severity']
 
-    return severity, description
+    return severity.upper(), description
 
 
 # Check volume space usage.
@@ -355,11 +359,16 @@ def check_triggers(nexenta):
 
                 # Convert severity/description.
                 severity, description = known_errors(result)
-                if severity == "CRITICAL":
-                    rc.RC = NagiosStates.CRITICAL
-                else:
-                    rc.RC = NagiosStates.WARNING
-                errors.append("%s:%s: %s" % (trigger, severity, description))
+                # Only append if severity is not 'IGNORE'
+                if not severity == "IGNORE":
+                    if severity == "CRITICAL":
+                        rc.RC = NagiosStates.CRITICAL
+                    elif severity == "UNKNOWN": 
+                        rc.RC = NagiosStates.UNKNOWN
+                    else:
+                        rc.RC = NagiosStates.WARNING
+                    
+                    errors.append("%s:%s: %s" % (trigger, severity, description))
 
     return (errors)
 
@@ -606,11 +615,12 @@ def print_usage():
     print "                  amount of space used([M,G,T]) or IGNORE."
     print "                  DEFAULT thresholds are applied to all folders not specified."
     print "[known_errors]  : Convert severity and/or description of known error messages."
-    print "                  Can consist of multiple options(error messages) formatted as"
+    print "                  Can consist of multiple error messages formatted as"
     print "                  <error message> = <severity>;<description>."
     print "                  <error message> can be a part of a error message or DEFAULT."
-    print "                  <severity> can be DEFAULT, NOTICE, WARNING or CRITICAL."
+    print "                  <severity> can be DEFAULT,WARNING,CRITICAL,UNKNOWN or IGNORE"
     print "                  DEFAULT severity does not change the original severity level."
+    print "                  If IGNORE is set as severity the entire message is ignored."
     print "                  <description> is the description to which the error message"
     print "                  will be changed. If no match is found the DEFAULT description"
     print "                  will be appended to the orignial error message(if a DEFAULT"
@@ -618,7 +628,7 @@ def print_usage():
     sys.exit()
 
 def print_version():
-    print "Version 1.0.7"
+    print "Version 1.0.8"
     sys.exit()
 
 if __name__ == '__main__':
