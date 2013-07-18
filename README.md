@@ -16,7 +16,7 @@ Features
 
 Supports
 ========
-* NexentaStor 3.1.2/3.1.3/3.1.3.5
+* NexentaStor 3.1.2/3.1.3/3.1.3.5/3.1.4/3.1.4.1
 * HTTP and HTTPS
 * SNMPv2 and SNMPv3
 * Python 2.4/2.6/2.7
