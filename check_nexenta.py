@@ -30,6 +30,9 @@
 # 2013/15/02 v1.0.6 Brenn Oosterbaan - simplified snmp v2/v3 support
 # 2013/16/02 v1.0.7 Brenn Oosterbaan - only lookup hostname once
 # 2013/24/06 v1.0.8 Brenn Oosterbaan - added option to IGNORE messages
+# 2013/22/08 v1.0.9 Brenn Oosterbaan - added option to change only
+#                                severity for known errors, and 
+#                                improved code readability
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -213,32 +216,44 @@ def convert_space(size):
 # Convert severity/description for known errors defined in config file.
 def known_errors(result):
     cfg = ReadConfig()
-
+    severity = []
+    description = []
+    
     # Check if part of the message matches a string in the config file.
-    description = cfg.known_errors(result['description'])
-    if description:
+    known_error = cfg.known_errors(result['description'])
+    if known_error:
         # Match found, return severity/description.
         try:
-            severity, description = description.split(';')
+            severity, description = known_error.split(';')
         except ValueError:
-            raise CritError("Error in config file at [known_errors], line: %s" % description)
+            raise CritError("Error in config file at [known_errors], line: %s" % known_error)
         
         if not severity.upper() in ("DEFAULT", "WARNING", "CRITICAL", "UNKNOWN", "IGNORE"):
-            raise CritError("Invalid severity in config file at [known_errors], line: %s" % description)
-    else:
-        # No match found, append default if defined in the config file.
-        description = cfg.get_option('known_errors', "DEFAULT")
-        if description:
+            raise CritError("Invalid severity in config file at [known_errors], line: %s" % known_error)
+
+    if not description:
+        # No match found or only severity match found, append default if defined in the config file.
+        default = cfg.get_option('known_errors', "DEFAULT")
+        if default:
+            # Get the default description and append it
             try:
-                severity, description = description.split(';')
+                description = default.split(';')[1]
             except ValueError:
-                raise CritError("Error in config file at [known_errors], line: %s" % description)
+                raise CritError("Error in config file at [known_errors], line: %s" % default)
             description = "%s %s" % (result['description'], description)
+            
+            # Get the default severity if there was no match in the config file
+            if not severity:
+                try:
+                    severity = default.split(';')[0]
+                except ValueError:
+                    raise CritError("Error in config file at [known_errors], line: %s" % default)
         else:
-            severity = result['severity']
+            # No default found, pass the original description
             description = result['description']
 
-    if severity.upper() == "DEFAULT":
+    # If default or no match, pass the original severity
+    if not severity or severity.upper() == "DEFAULT":
         severity = result['severity']
 
     return severity.upper(), description
@@ -622,13 +637,14 @@ def print_usage():
     print "                  DEFAULT severity does not change the original severity level."
     print "                  If IGNORE is set as severity the entire message is ignored."
     print "                  <description> is the description to which the error message"
-    print "                  will be changed. If no match is found the DEFAULT description"
+    print "                  will be changed. It is possible to set <severity> but not"
+    print "                  <description>. If no match is found the DEFAULT description"
     print "                  will be appended to the orignial error message(if a DEFAULT"
     print "                  has been configured)."
     sys.exit()
 
 def print_version():
-    print "Version 1.0.8"
+    print "Version 1.0.9"
     sys.exit()
 
 if __name__ == '__main__':
