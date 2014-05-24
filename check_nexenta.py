@@ -33,7 +33,8 @@
 # 2013/08/22 v1.0.9 Brenn Oosterbaan - added option to change only
 #                                severity for known errors, and 
 #                                improved code readability
-# 2013/18/11 v1.0.10 Brenn Oosterbaan - handle NMS unresponiveness
+# 2013/11/18 v1.0.10 Brenn Oosterbaan - handle NMS unresponiveness
+# 2014/05/24 v1.0.11 Brenn Oosterbaan - bugfix in NMS unresponiveness
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -162,10 +163,7 @@ class NexentaApi:
                 time.sleep(20)
 
         if not tries:
-            if response['error'] and "Cannot introspect object com.nexenta.nms" in response['error']['message']:
-                raise CritError("API error occured: NMS unresponsive")
-            else:
-                raise CritError("Unable to connect to API at %s" % (self.url))
+            raise CritError("Unable to connect to API at %s" % (self.url))
 
         if response['error']:
             raise CritError("API error occured: %s" % response['error'])
@@ -653,7 +651,7 @@ def print_usage():
     sys.exit()
 
 def print_version():
-    print "Version 1.0.10"
+    print "Version 1.0.11"
     sys.exit()
 
 if __name__ == '__main__':
