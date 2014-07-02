@@ -35,6 +35,7 @@
 #                                improved code readability
 # 2013/11/18 v1.0.10 Brenn Oosterbaan - handle NMS unresponiveness
 # 2014/05/24 v1.0.11 Brenn Oosterbaan - bugfix in NMS unresponiveness
+# 2014/07/02 v1.0.12 Brenn Oosterbaan - bugfix in ReadConfig
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -92,7 +93,7 @@ class ReadConfig:
     # Default to <scriptname>.cfg if no configfile was given.
     def open_config(self, configfile):
         if not configfile:
-            configfile = os.path.abspath(__file__).split(".")[0] + ".cfg"
+            configfile = os.path.splitext(os.path.abspath(__file__))[0] + ".cfg"
         elif not os.path.dirname(configfile):
             configfile = os.path.join(os.path.dirname(__file__), configfile)
 
@@ -651,7 +652,7 @@ def print_usage():
     sys.exit()
 
 def print_version():
-    print "Version 1.0.11"
+    print "Version 1.0.12"
     sys.exit()
 
 if __name__ == '__main__':
