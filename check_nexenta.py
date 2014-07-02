@@ -36,6 +36,7 @@
 # 2013/11/18 v1.0.10 Brenn Oosterbaan - handle NMS unresponiveness
 # 2014/05/24 v1.0.11 Brenn Oosterbaan - bugfix in NMS unresponiveness
 # 2014/07/02 v1.0.12 Brenn Oosterbaan - bugfix in ReadConfig
+# 2014/07/02 v1.0.13 Brenn Oosterbaan - added nms retry value
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -126,8 +127,12 @@ class NexentaApi:
         cfg = ReadConfig()
         username = cfg.get_option(nexenta['hostname'], 'api_user')
         password = cfg.get_option(nexenta['hostname'], 'api_pass')
+        self.nms_retry = cfg.get_option(nexenta['hostname'], 'nms_retry')
+
         if not username or not password:
             raise CritError("No connection info configured for %s" % nexenta['hostname'])
+        if not self.nms_retry:
+            self.nms_retry = 2
         
         ssl = cfg.get_option(nexenta['hostname'], 'api_ssl')
         if ssl != "ON":
@@ -151,8 +156,8 @@ class NexentaApi:
         request.add_header('Authorization', 'Basic %s' % self.base64_string)
         request.add_header('Content-Type' , 'application/json')
 
-        # Try to connect max 2 times. Sleep 20 seconds if NMS connection error occurs.
-        tries = 2
+        # Try to connect max <nms_retry> times. Sleep 20 seconds if NMS connection error occurs.
+        tries = int(self.nms_retry)
         while tries:
             try:
                 response = json.loads(urllib2.urlopen(request).read())
@@ -637,6 +642,8 @@ def print_usage():
     print "                  Snapshot thresholds can be a percentage of space used(%),"
     print "                  amount of space used([M,G,T]) or IGNORE."
     print "                  DEFAULT thresholds are applied to all folders not specified."
+    print "nms_retry       : Sets the max number of retries when NMS is unresponsive."
+    print "                  Defaults to 2 if not set."
     print "[known_errors]  : Convert severity and/or description of known error messages."
     print "                  Can consist of multiple error messages formatted as"
     print "                  <error message> = <severity>;<description>."
@@ -652,7 +659,7 @@ def print_usage():
     sys.exit()
 
 def print_version():
-    print "Version 1.0.12"
+    print "Version 1.0.13"
     sys.exit()
 
 if __name__ == '__main__':
