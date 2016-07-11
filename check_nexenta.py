@@ -37,6 +37,7 @@
 # 2014/05/24 v1.0.11 Brenn Oosterbaan - bugfix in NMS unresponiveness
 # 2014/07/02 v1.0.12 Brenn Oosterbaan - bugfix in ReadConfig
 # 2014/07/02 v1.0.13 Brenn Oosterbaan - added nms retry value
+# 2016/07/11 v2.0.0  helge000 - added support for 4.0 and insecure SSL
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # Schuberg Philis 2012
@@ -676,7 +677,7 @@ def print_usage():
     sys.exit()
 
 def print_version():
-    print "Version 1.0.13"
+    print "Version 2.0.0"
     sys.exit()
 
 if __name__ == '__main__':
