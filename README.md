@@ -19,7 +19,7 @@ Supports
 * NexentaStor 3.1.2/3.1.3/3.1.3.5/3.1.4/3.1.4.1/3.1.5/4.0.X
 * HTTP and HTTPS
 * SNMPv2 and SNMPv3
-* Python 2.4/2.6/2.7
+* Python 2.4/2.6/2.7 !When using SSL minimum Python 2.7.11 or 3.5.2 required!
 
 Getting Started
 ===============
