@@ -135,10 +135,20 @@ class NexentaApi:
             self.nms_retry = 2
         
         ssl = cfg.get_option(nexenta['hostname'], 'api_ssl')
+        insecure = cfg.get_option(nexenta['hostname'], 'api_ssl_insecure')
+        self.https = False
         if ssl != "ON":
             protocol = 'http'
         else:
+            import ssl 
             protocol = 'https'
+            self.https = True
+            if insecure == "ON":
+                self.ctx = ssl.create_default_context()
+                self.ctx.check_hostname = False
+                self.ctx.verify_mode = ssl.CERT_NONE
+            else:
+                self.ctx = ssl.create_default_context()
             
         port = cfg.get_option(nexenta['hostname'], 'api_port')
         if not port:
@@ -160,7 +170,11 @@ class NexentaApi:
         tries = int(self.nms_retry)
         while tries:
             try:
-                response = json.loads(urllib2.urlopen(request).read())
+                if self.https:
+                    response = json.loads(urllib2.urlopen(request, context=self.ctx).read())
+                else:
+                    response = json.loads(urllib2.urlopen(request).read())
+
                 if response['error'] and "Cannot introspect object com.nexenta.nms" in response['error']['message']:
                     raise Exception("NMS unresponsive")
                 break
@@ -172,6 +186,7 @@ class NexentaApi:
             raise CritError("Unable to connect to API at %s" % (self.url))
 
         if response['error']:
+            #raise
             raise CritError("API error occured: %s" % response['error'])
         else:
             return response['result']
@@ -506,13 +521,14 @@ def collect_perfdata(nexenta):
                 perfdata.append("'/%s compressratio'=%s" % (vol, ratio[:-1]))
 
         # Get memory used, free and paging.
-        memstats = api.get_data(obj='appliance', meth='get_memstat', par=[''])
-
+        memstats = api.get_data(obj='appliance', meth='get_memstat', par=[])
+        
         perfdata.append("'Memory free'=%sMB" % (memstats.get("ram_free")))
         perfdata.append("'Memory used'=%sMB" % (memstats.get("ram_total") - memstats.get("ram_free")))
         perfdata.append("'Memory paging'=%sMB" % (memstats.get("ram_paging")))
 
     return (output, perfdata)
+
 
 
 # Main
@@ -610,6 +626,7 @@ def print_usage():
     print "api_user        : Username which has API rights on the Nexenta"
     print "api_pass        : Password for the user with API rights."
     print "api_ssl         : Use HTTP-SSL (https://) for connection."
+    print "api_ssl_insecure: Do not validate certificates when connecting via SSL."
     print "api_port        : Port used for API connection to the Nexenta. Defaults to"
     print "                  standard NMV port (2000) if not set."
     print "snmp_user       : SNMP username with ro rights on the Nexenta. Only needed"
